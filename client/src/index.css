@@ -1,0 +1,159 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --toastify-color-success: #2f9e69;
+  --toastify-color-error: #ef4444;
+  --toastify-color-warning: #f59e0b;
+  --toastify-color-info: #3b82f6;
+}
+
+@layer base {
+  html {
+    @apply text-secondary-800 dark:text-secondary-100;
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-secondary-50 dark:bg-secondary-950 font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-medium tracking-tight;
+  }
+
+  h1 {
+    @apply text-3xl md:text-4xl;
+  }
+
+  h2 {
+    @apply text-2xl md:text-3xl;
+  }
+
+  h3 {
+    @apply text-xl md:text-2xl;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+  
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white focus:ring-primary-500;
+  }
+  
+  .btn-secondary {
+    @apply bg-secondary-100 hover:bg-secondary-200 text-secondary-800 focus:ring-secondary-300 dark:bg-secondary-800 dark:hover:bg-secondary-700 dark:text-secondary-100;
+  }
+  
+  .btn-ghost {
+    @apply bg-transparent hover:bg-secondary-100 text-secondary-800 dark:text-secondary-100 dark:hover:bg-secondary-800;
+  }
+
+  .input {
+    @apply block w-full px-3 py-2 rounded-md border border-secondary-300 dark:border-secondary-700 
+    bg-white dark:bg-secondary-800 text-secondary-800 dark:text-secondary-100
+    focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+    placeholder:text-secondary-400 dark:placeholder:text-secondary-500;
+  }
+
+  .card {
+    @apply bg-white dark:bg-secondary-900 rounded-lg shadow-card hover:shadow-card-hover transition-shadow duration-300;
+  }
+}
+
+.resume-container {
+  width: 8.5in;
+  min-height: 11in;
+  padding: 0.5in;
+  margin: 0 auto;
+  background: white;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.resume-container:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+@media print {
+  .resume-container {
+    box-shadow: none;
+    margin: 0;
+  }
+
+  @page {
+    size: letter;
+    margin: 0;
+  }
+}
+
+.resume-section {
+  margin-bottom: 1.25rem;
+}
+
+.resume-section-title {
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 0.35rem;
+  color: var(--title-color, #1e7f54);
+}
+
+/* Animation for auto-save indicator */
+@keyframes pulse {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+.pulse {
+  animation: pulse 2s infinite ease-in-out;
+}
+
+/* Smooth fading animations */
+.fade-enter {
+  opacity: 0;
+}
+.fade-enter-active {
+  opacity: 1;
+  transition: opacity 300ms;
+}
+.fade-exit {
+  opacity: 1;
+}
+.fade-exit-active {
+  opacity: 0;
+  transition: opacity 300ms;
+}
+
+/* Page transitions */
+.page-transition-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms;
+}
+.page-transition-exit {
+  opacity: 1;
+}
+.page-transition-exit-active {
+  opacity: 0;
+  transition: opacity 200ms;
+}
