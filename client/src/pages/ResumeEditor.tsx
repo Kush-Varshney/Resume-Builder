@@ -241,29 +241,78 @@ const ResumeEditor = () => {
   }
 
   const handleDownload = async () => {
+    if (!resume) return;
+
     try {
-      const response = await api.get(`/resumes/${id}/pdf`, { responseType: "blob" })
+      // 1. Render the current preview to HTML using a hidden container
+      const previewContainer = document.createElement('div');
+      previewContainer.style.position = 'fixed';
+      previewContainer.style.left = '-9999px';
+      previewContainer.style.top = '0';
+      previewContainer.style.width = '800px'; // A4 width
+      previewContainer.style.background = '#fff';
+      document.body.appendChild(previewContainer);
 
-      // Create a blob link to download
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement("a")
-      link.href = url
-      link.setAttribute("download", `${resume?.title || "resume"}.pdf`)
+      // Render the correct template
+      let templateHtml = '';
+      switch (resume.template) {
+        case 'modern':
+          templateHtml = require('react-dom/server').renderToStaticMarkup(
+            require('../templates/ModernTemplate').default({ resume })
+          );
+          break;
+        case 'classic':
+          templateHtml = require('react-dom/server').renderToStaticMarkup(
+            require('../templates/ClassicTemplate').default({ resume })
+          );
+          break;
+        case 'minimal':
+          templateHtml = require('react-dom/server').renderToStaticMarkup(
+            require('../templates/MinimalTemplate').default({ resume })
+          );
+          break;
+        default:
+          templateHtml = require('react-dom/server').renderToStaticMarkup(
+            require('../templates/ModernTemplate').default({ resume })
+          );
+      }
+      previewContainer.innerHTML = templateHtml;
 
-      // Append to html link element page
-      document.body.appendChild(link)
+      // 2. Get the HTML content
+      const html = previewContainer.innerHTML;
+      document.body.removeChild(previewContainer);
 
-      // Start download
-      link.click()
+      // 3. Send HTML to backend for PDF generation
+      const pdfBlob = await api.generatePdfFromHtml(resume._id, html);
 
-      // Clean up and remove the link
-      link.parentNode?.removeChild(link)
+      // 4. Check if the blob is actually a PDF
+      if (pdfBlob.type !== 'application/pdf') {
+        const text = await pdfBlob.text();
+        toast.error('Failed to generate PDF: ' + text);
+        return;
+      }
 
-      toast.success("Resume downloaded successfully")
+      // 5. Download the PDF
+      const url = window.URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${resume.title || 'resume'}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      // 6. Reload the resume from the backend to refresh the preview
+      const response = await api.get(`/resumes/${resume._id}`);
+      setResume(response.data);
+      setOriginalResume(JSON.parse(JSON.stringify(response.data)));
+      setHasUnsavedChanges(false);
+
+      toast.success('Resume downloaded and preview reloaded!');
     } catch (error) {
-      toast.error("Failed to download resume")
+      toast.error('Failed to download resume');
     }
-  }
+  };
 
   const handleShareLink = async () => {
     try {
@@ -403,15 +452,16 @@ const ResumeEditor = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="max-w-4xl mx-auto px-4 sm:px-8 py-8">
       {/* Validation Errors Modal */}
       {showValidationModal && (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6 shadow-xl">
-            <h3 className="text-lg font-medium text-red-600 dark:text-red-400 mb-3">
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-md w-full p-8 shadow-2xl border border-gray-100 dark:border-gray-800 focus:outline-none" role="dialog" aria-modal="true" aria-labelledby="validation-modal-title">
+            <h3 id="validation-modal-title" className="text-xl font-bold text-red-600 dark:text-red-400 mb-4 flex items-center gap-2">
+              <span className="inline-block w-6 h-6 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center"><svg className="w-4 h-4 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12A9 9 0 113 12a9 9 0 0118 0z" /></svg></span>
               Resume Validation Errors
             </h3>
-            <div className="mb-5">
+            <div className="mb-6">
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
                 Please fix the following issues before saving:
               </p>
@@ -423,8 +473,10 @@ const ResumeEditor = () => {
             </div>
             <div className="flex justify-end">
               <button
-                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 border border-transparent rounded-md shadow-sm hover:bg-emerald-700"
+                className="px-5 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg shadow hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                 onClick={() => setShowValidationModal(false)}
+                aria-label="Close validation errors dialog"
+                autoFocus
               >
                 OK
               </button>
@@ -435,28 +487,31 @@ const ResumeEditor = () => {
 
       {/* Discard Changes Modal */}
       {showDiscardModal && (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6 shadow-xl">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-3">Unsaved Changes</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-md w-full p-8 shadow-2xl border border-gray-100 dark:border-gray-800 focus:outline-none" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
+            <h3 id="discard-modal-title" className="text-xl font-bold text-gray-900 dark:text-white mb-4">Unsaved Changes</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
               You have unsaved changes. What would you like to do?
             </p>
-            <div className="flex justify-end space-x-3">
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
               <button
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+                className="px-5 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 rounded-lg shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                 onClick={handleCancelNavigation}
+                aria-label="Continue editing"
               >
                 Continue Editing
               </button>
               <button
-                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 border border-transparent rounded-md shadow-sm hover:bg-emerald-700"
+                className="px-5 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                 onClick={handleSaveAndNavigate}
+                aria-label="Save and exit"
               >
                 Save & Exit
               </button>
               <button
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700"
+                className="px-5 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                 onClick={handleConfirmNavigation}
+                aria-label="Discard changes"
               >
                 Discard Changes
               </button>
@@ -465,109 +520,96 @@ const ResumeEditor = () => {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
-        <div className="flex items-center">
+      {/* Header & Toolbar */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-6">
+        <div className="flex items-center gap-4">
           <button
             onClick={() => handleNavigateAway("/dashboard")}
-            className="mr-4 p-2 rounded-full text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+            className="p-2 rounded-full text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+            aria-label="Back to Dashboard"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={22} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{resume.title}</h1>
-            <div className="flex items-center mt-1">
+            <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-1 truncate max-w-xs sm:max-w-md">{resume.title}</h1>
+            <div className="flex items-center mt-1 space-x-2">
               {saving ? (
-                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
-                  <span className="pulse mr-1">Saving...</span>
-                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center animate-pulse">Saving...</span>
               ) : lastSaved ? (
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Last saved: {lastSaved.toLocaleTimeString()}
-                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">Last saved: {lastSaved.toLocaleTimeString()}</span>
               ) : null}
               {hasUnsavedChanges && (
-                <span className="text-xs text-amber-500 dark:text-amber-400 ml-2">
-                  • Unsaved changes
-                </span>
+                <span className="text-xs text-amber-500 dark:text-amber-400">• Unsaved changes</span>
               )}
             </div>
           </div>
         </div>
-
-        <div className="flex space-x-2">
-          <button
-            onClick={handleSave}
-            className={`inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 
-              ${hasUnsavedChanges ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-500 opacity-75 cursor-not-allowed'} 
-              focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500`}
-            disabled={!hasUnsavedChanges || saving}
-          >
-            <Save className="mr-2 h-4 w-4" />
-            Save
-          </button>
-
-          <button
-            onClick={handleDownload}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Download PDF
-          </button>
-
-          <button
-            onClick={handleShareLink}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
-          >
-            <Share className="mr-2 h-4 w-4" />
-            Share
-          </button>
-          
-          {activeTab === "preview" && (
+        <div className="w-full sm:w-auto">
+          <div className="flex flex-wrap gap-2 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow px-4 py-3">
             <button
-              onClick={() => handleNavigateAway("/dashboard")}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+              onClick={handleSave}
+              className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors mr-2 ${hasUnsavedChanges ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-emerald-500 text-white opacity-70 cursor-not-allowed'}`}
+              disabled={!hasUnsavedChanges || saving}
+              aria-label="Save resume"
             >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Dashboard
+              <Save className="mr-2 h-4 w-4" />
+              Save
             </button>
-          )}
+            <button
+              onClick={handleDownload}
+              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors mr-2"
+              aria-label="Download PDF"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download PDF
+            </button>
+            <button
+              onClick={handleShareLink}
+              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors"
+              aria-label="Share public link"
+            >
+              <Share className="mr-2 h-4 w-4" />
+              Share
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-        <div className="border-b border-gray-200 dark:border-gray-700">
+      {/* Tabs and Main Content */}
+      <div className="bg-white dark:bg-gray-800 shadow rounded-2xl overflow-hidden">
+        <div className="border-b border-gray-100 dark:border-gray-700">
           <nav className="flex -mb-px">
             <button
               onClick={() => setActiveTab("edit")}
-              className={`py-4 px-6 text-sm font-medium ${
+              className={`py-4 px-6 text-base font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors ${
                 activeTab === "edit"
                   ? "border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400"
                   : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
               }`}
+              aria-current={activeTab === "edit" ? "page" : undefined}
             >
               Edit
             </button>
             <button
               onClick={() => setActiveTab("preview")}
-              className={`py-4 px-6 text-sm font-medium ${
+              className={`py-4 px-6 text-base font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors ${
                 activeTab === "preview"
                   ? "border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400"
                   : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
               }`}
+              aria-current={activeTab === "preview" ? "page" : undefined}
             >
               Preview
             </button>
           </nav>
         </div>
-
-        <div className="p-6">
+        <div className="p-8">
           {activeTab === "edit" ? (
-            <div className="space-y-6">
+            <div className="space-y-8">
               <TemplateSelector 
                 currentTemplate={resume.template} 
                 onTemplateChange={handleTemplateChange}
               />
-
               <ResumeForm resume={resume} onChange={handleChange} ref={resumeFormRef} />
             </div>
           ) : (

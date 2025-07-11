@@ -172,10 +172,8 @@ const Dashboard = () => {
   const downloadResume = async (id: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    
     try {
       setLoading(true)
-      
       // Find the resume to get its data
       const resume = resumes.find(r => r._id === id)
       if (!resume) {
@@ -183,102 +181,51 @@ const Dashboard = () => {
         toast.error("Resume not found")
         return
       }
-      
-      // Log that we're starting the download
-      console.log(`Starting download for resume ID: ${id}, title: ${resume.title}`)
-      
-      try {
-        // Method 1: Try the blob approach first
-        const response = await api.get(`/resumes/${id}/pdf`, {
-          responseType: 'blob',
-        })
-        
-        // Check if we got a valid PDF (at least by MIME type)
-        const contentType = response.headers['content-type']
-        if (!contentType || !contentType.includes('application/pdf')) {
-          console.warn('Response is not a PDF:', contentType)
-          throw new Error('Response is not a PDF')
-        }
-        
-        // Create a blob and download it
-        const blob = new Blob([response.data], { type: 'application/pdf' })
-        
-        // Check if blob is valid
-        if (blob.size === 0) {
-          console.warn('Generated PDF has zero size')
-          throw new Error('Generated PDF has zero size')
-        }
-        
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${resume.title}.pdf`
-        document.body.appendChild(a)
-        a.click()
-        
-        // Small delay before cleanup
-        setTimeout(() => {
-          window.URL.revokeObjectURL(url)
-          document.body.removeChild(a)
-        }, 100)
-        
-        toast.success("PDF downloaded successfully!")
-      } catch (blobError) {
-        console.error("Blob download failed, trying alternative method:", blobError)
-        
-        // Method 2: Open in a new tab as fallback
-        const apiBaseUrl = process.env.REACT_APP_API_URL || "http://localhost:5000/api"
-        const token = localStorage.getItem('token')
-        const pdfUrl = `${apiBaseUrl}/resumes/${id}/pdf`
-        
-        const newTab = window.open('about:blank', '_blank')
-        if (!newTab) {
-          throw new Error('Could not open new tab. Please check your popup blocker settings.')
-        }
-        
-        // Create a form to post with the token for authorization
-        newTab.document.write(`
-          <html>
-            <body>
-              <h1>Preparing your PDF download...</h1>
-              <p>If the download doesn't start automatically, <a id="direct-link" href="${pdfUrl}">click here</a>.</p>
-              <script>
-                // Create a hidden iframe to handle the download
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-                
-                // Load the PDF URL in the iframe
-                iframe.src = "${pdfUrl}";
-                
-                // Set the Authorization header for the direct link
-                document.getElementById('direct-link').onclick = function(e) {
-                  fetch("${pdfUrl}", {
-                    headers: {
-                      "Authorization": "Bearer ${token}"
-                    }
-                  })
-                  .then(response => response.blob())
-                  .then(blob => {
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = "${resume.title}.pdf";
-                    document.body.appendChild(a);
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  });
-                  e.preventDefault();
-                };
-              </script>
-            </body>
-          </html>
-        `)
-        
-        toast.success("PDF opened in a new tab")
+      // Render the correct template to HTML (same as ResumeEditor)
+      let templateHtml = '';
+      switch (resume.template) {
+        case 'modern':
+          templateHtml = require('react-dom/server').renderToStaticMarkup(
+            require('../templates/ModernTemplate').default({ resume })
+          );
+          break;
+        case 'classic':
+          templateHtml = require('react-dom/server').renderToStaticMarkup(
+            require('../templates/ClassicTemplate').default({ resume })
+          );
+          break;
+        case 'minimal':
+          templateHtml = require('react-dom/server').renderToStaticMarkup(
+            require('../templates/MinimalTemplate').default({ resume })
+          );
+          break;
+        default:
+          templateHtml = require('react-dom/server').renderToStaticMarkup(
+            require('../templates/ModernTemplate').default({ resume })
+          );
       }
-      
-      setLoading(false)
+      // Send HTML to backend for PDF generation
+      const pdfBlob = await api.generatePdfFromHtml(resume._id, templateHtml);
+      // Check if the blob is actually a PDF
+      if (pdfBlob.type !== 'application/pdf') {
+        const text = await pdfBlob.text();
+        toast.error('Failed to generate PDF: ' + text);
+        setLoading(false);
+        return;
+      }
+      // Download the PDF
+      const url = window.URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${resume.title}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
+      toast.success("PDF downloaded successfully!");
+      setLoading(false);
     } catch (error) {
       console.error("PDF generation error:", error)
       toast.error(`Failed to download resume: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -345,104 +292,117 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Resumes</h1>
-        
-        <div className="flex gap-2">
+    <div className="max-w-6xl mx-auto px-4 sm:px-8 py-10">
+      {/* Header */}
+      <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-10 gap-4">
+        <div>
+          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 dark:text-white mb-1">Dashboard</h1>
+          <p className="text-base text-gray-600 dark:text-gray-300">All your resumes in one place. Create, edit, download, and share with ease.</p>
+        </div>
         <button
           onClick={createNewResume}
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+          className="inline-flex items-center px-6 py-3 rounded-lg shadow-lg text-base font-semibold text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors"
         >
-          <Plus className="mr-2 h-4 w-4" />
-          Create New Resume
+          <Plus className="mr-2 h-5 w-5" />
+          Create Resume
         </button>
-      </div>
-      </div>
+      </header>
       
       {/* Search and filter bar */}
       {resumes.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow mb-6">
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="relative w-full md:w-64">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm"
-                placeholder="Search resumes..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+        <div className="bg-white dark:bg-gray-900 p-4 rounded-xl shadow flex flex-col md:flex-row gap-4 items-center justify-between mb-8 border border-gray-100 dark:border-gray-800">
+          <div className="relative w-full md:w-64">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
             </div>
-            
-            <div className="flex items-center space-x-4 w-full md:w-auto">
-              <div className="relative">
+            <input
+              type="text"
+              className="block w-full pl-10 pr-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg leading-5 bg-white dark:bg-gray-800 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm transition"
+              placeholder="Search resumes..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Search resumes"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+            {/* Filter chip if active */}
+            {templateFilter && (
+              <span className="inline-flex items-center px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-medium mr-2">
+                {templateNames[templateFilter as keyof typeof templateNames]}
                 <button
-                  onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
-                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+                  onClick={() => setTemplateFilter(null)}
+                  className="ml-2 text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 dark:hover:text-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-full"
+                  aria-label="Clear template filter"
                 >
-                  <Filter className="h-4 w-4 mr-2" />
-                  {templateFilter ? `Template: ${templateNames[templateFilter as keyof typeof templateNames]}` : "Filter Templates"}
+                  <X className="h-3 w-3" />
                 </button>
-                
-                {isFilterMenuOpen && (
-                  <div className="absolute z-10 mt-1 w-48 bg-white dark:bg-gray-800 shadow-lg rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 focus:outline-none right-0">
+              </span>
+            )}
+            <div className="relative">
+              <button
+                onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
+                className="inline-flex items-center px-3 py-2 border border-gray-200 dark:border-gray-700 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                aria-haspopup="listbox"
+                aria-expanded={isFilterMenuOpen}
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                {templateFilter ? `Template: ${templateNames[templateFilter as keyof typeof templateNames]}` : "Filter Templates"}
+              </button>
+              {isFilterMenuOpen && (
+                <div className="absolute z-10 mt-1 w-48 bg-white dark:bg-gray-900 shadow-lg rounded-lg py-1 text-base ring-1 ring-black ring-opacity-5 focus:outline-none right-0 border border-gray-100 dark:border-gray-800">
+                  <button
+                    className={`block px-4 py-2 text-sm w-full text-left ${!templateFilter ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                    onClick={() => {
+                      setTemplateFilter(null)
+                      setIsFilterMenuOpen(false)
+                    }}
+                  >
+                    All Templates
+                  </button>
+                  {Object.entries(templateNames).map(([key, name]) => (
                     <button
-                      className={`block px-4 py-2 text-sm w-full text-left ${!templateFilter ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                      key={key}
+                      className={`block px-4 py-2 text-sm w-full text-left ${templateFilter === key ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
                       onClick={() => {
-                        setTemplateFilter(null)
+                        setTemplateFilter(key)
                         setIsFilterMenuOpen(false)
                       }}
                     >
-                      All Templates
+                      {name}
                     </button>
-                    {Object.entries(templateNames).map(([key, name]) => (
-                      <button
-                        key={key}
-                        className={`block px-4 py-2 text-sm w-full text-left ${templateFilter === key ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                        onClick={() => {
-                          setTemplateFilter(key)
-                          setIsFilterMenuOpen(false)
-                        }}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex space-x-2 items-center ml-2">
+              <button
+                onClick={() => changeSortField("title")}
+                className={`px-3 py-2 text-xs font-medium rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors ${
+                  sortField === "title" 
+                    ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20' 
+                    : 'text-gray-700 dark:text-gray-300 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
+                aria-label="Sort by name"
+              >
+                Name
+                {sortField === "title" && (
+                  sortDirection === "asc" ? <SortAsc className="inline ml-1 h-4 w-4" /> : <SortDesc className="inline ml-1 h-4 w-4" />
                 )}
-              </div>
-              
-              <div className="flex space-x-2 items-center">
-                <button
-                  onClick={() => changeSortField("title")}
-                  className={`px-3 py-2 text-sm font-medium rounded-md ${
-                    sortField === "title" 
-                      ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
-                      : 'text-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  Name
-                  {sortField === "title" && (
-                    sortDirection === "asc" ? <SortAsc className="inline ml-1 h-4 w-4" /> : <SortDesc className="inline ml-1 h-4 w-4" />
-                  )}
-                </button>
-                
-                <button
-                  onClick={() => changeSortField("updatedAt")}
-                  className={`px-3 py-2 text-sm font-medium rounded-md ${
-                    sortField === "updatedAt" 
-                      ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
-                      : 'text-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  Updated
-                  {sortField === "updatedAt" && (
-                    sortDirection === "asc" ? <SortAsc className="inline ml-1 h-4 w-4" /> : <SortDesc className="inline ml-1 h-4 w-4" />
-                  )}
-                </button>
-              </div>
+              </button>
+              <button
+                onClick={() => changeSortField("updatedAt")}
+                className={`px-3 py-2 text-xs font-medium rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors ${
+                  sortField === "updatedAt" 
+                    ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20' 
+                    : 'text-gray-700 dark:text-gray-300 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
+                aria-label="Sort by updated date"
+              >
+                Updated
+                {sortField === "updatedAt" && (
+                  sortDirection === "asc" ? <SortAsc className="inline ml-1 h-4 w-4" /> : <SortDesc className="inline ml-1 h-4 w-4" />
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -511,149 +471,99 @@ const Dashboard = () => {
 
       {/* Empty state for no resumes */}
       {resumes.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-          <div className="relative h-40 bg-gradient-to-r from-emerald-500 to-teal-600">
-            <div className="absolute inset-0 bg-black opacity-20"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <h2 className="text-2xl font-bold text-white text-center px-4">Start Your Professional Journey</h2>
-            </div>
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg overflow-hidden flex flex-col items-center py-16 px-6 border border-gray-100 dark:border-gray-800">
+          <div className="flex flex-col items-center mb-8">
+            <FileText className="h-20 w-20 text-emerald-400 mb-4" aria-hidden="true" />
+            <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white mb-2 text-center">Start Your Professional Journey</h2>
+            <p className="text-base text-gray-600 dark:text-gray-300 max-w-xl text-center mb-4">
+              Build a standout resume that showcases your skills and experience. Choose from professionally designed templates and customize to match your personal brand.
+            </p>
           </div>
-          
-          <div className="p-8">
-            <div className="text-center mb-8">
-              <FileText className="mx-auto h-16 w-16 text-emerald-500 mb-4" />
-              <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-2">Create Your First Resume</h3>
-              <p className="text-base text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-                Build a standout resume that showcases your skills and experience. Choose from professionally designed 
-                templates and customize colors to match your personal brand.
-              </p>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              {Object.entries(templateNames).map(([id, name]) => (
-                <div key={id} className="bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 hover:border-emerald-500 dark:hover:border-emerald-500 transition-all">
-                  <div className="p-4 text-center">
-                    <h4 className="font-medium text-gray-900 dark:text-white mb-1">{name} Template</h4>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {id === 'modern' && 'Clean design with modern elements'}
-                      {id === 'classic' && 'Traditional format for established professionals'}
-                      {id === 'minimal' && 'Simple and elegant for a focused presentation'}
-                    </p>
-                  </div>
-                  
-                  <div 
-                    className="h-40 opacity-90 hover:opacity-100 transition-opacity"
-                    style={{ 
-                      backgroundColor: id === 'modern' ? '#e6f7f0' : id === 'classic' ? '#eef2ff' : '#f0f9ff'
-                    }}
-                  >
-                    <div className="h-full flex items-center justify-center">
-                      <div className="text-5xl text-gray-300 dark:text-gray-600">{name.charAt(0)}</div>
-                    </div>
-                  </div>
+          <button
+            onClick={createNewResume}
+            className="inline-flex items-center px-8 py-3 rounded-lg shadow-lg text-base font-semibold text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors mb-8"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Create Your Resume Now
+          </button>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-3xl mt-8">
+            {Object.entries(templateNames).map(([id, name]) => (
+              <div key={id} className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 flex flex-col items-center p-4">
+                <div className="h-16 w-16 flex items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/20 mb-2">
+                  <span className="text-2xl font-bold text-emerald-500">{name.charAt(0)}</span>
                 </div>
-              ))}
-            </div>
-            
-            <div className="flex flex-col items-center">
-              <button
-                onClick={createNewResume}
-                className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-lg text-base font-medium text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors"
-              >
-                <Plus className="mr-2 h-5 w-5" />
-                Create Your Resume Now
-              </button>
-              
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center max-w-2xl">
-                <div className="p-3">
-                  <div className="text-emerald-500 font-bold text-lg mb-1">Easy to Use</div>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">Simple step-by-step process with intuitive editing</p>
-                </div>
-                <div className="p-3">
-                  <div className="text-emerald-500 font-bold text-lg mb-1">Professional Templates</div>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">Designed to impress recruiters and hiring managers</p>
-                </div>
-                <div className="p-3">
-                  <div className="text-emerald-500 font-bold text-lg mb-1">Easy Sharing</div>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">Download as PDF or share via secure link</p>
-                </div>
+                <h4 className="font-semibold text-gray-900 dark:text-white mb-1">{name} Template</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                  {id === 'modern' && 'Clean design with modern elements'}
+                  {id === 'classic' && 'Traditional format for established professionals'}
+                  {id === 'minimal' && 'Simple and elegant for a focused presentation'}
+                </p>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       ) : filteredAndSortedResumes.length === 0 ? (
-        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-          <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No matching resumes</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Try adjusting your search or filters.</p>
-          <div className="mt-6">
-            <button
-              onClick={() => {
-                setSearchTerm('')
-                setTemplateFilter(null)
-              }}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
-            >
-              Clear Filters
-            </button>
-          </div>
+        <div className="flex flex-col items-center py-16 px-6 bg-white dark:bg-gray-900 rounded-2xl shadow border border-gray-100 dark:border-gray-800">
+          <AlertCircle className="h-16 w-16 text-gray-300 dark:text-gray-700 mb-4" aria-hidden="true" />
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No matching resumes</h3>
+          <p className="text-base text-gray-600 dark:text-gray-400 mb-6 text-center">Try adjusting your search or filters.</p>
+          <button
+            onClick={() => {
+              setSearchTerm('')
+              setTemplateFilter(null)
+            }}
+            className="inline-flex items-center px-6 py-2 rounded-lg shadow text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+          >
+            <X className="mr-2 h-4 w-4" />
+            Clear Filters
+          </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredAndSortedResumes.map((resume) => (
             <div
               key={resume._id}
-              className="bg-white dark:bg-gray-800 overflow-hidden rounded-lg shadow-lg transition-all hover:shadow-xl"
+              className="group bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-sm hover:shadow-lg transition-shadow flex flex-col h-full"
             >
-              <div 
-                className="h-3 w-full" 
-                style={{ backgroundColor: "#1e7f54" }}
-              />
-              <div className="p-6">
+              <div className="h-2 w-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-t-2xl" />
+              <div className="flex-1 flex flex-col p-6">
                 <Link
                   to={`/resume/${resume._id}`}
-                  className="block"
+                  className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded"
+                  aria-label={`Edit resume: ${resume.title}`}
                 >
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
-                    {resume.title}
-                  </h3>
-                  <p className="mt-1 text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {resume.content?.personalInfo?.name || "Unnamed Resume"}
-                </p>
-                  <div className="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
-                    <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 rounded-md mr-2">
-                      {templateNames[resume.template as keyof typeof templateNames]}
-                    </span>
-                    <span>
-                      Updated {new Date(resume.updatedAt).toLocaleDateString()}
-                    </span>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">{resume.title}</h3>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-300 truncate">{resume.content?.personalInfo?.name || "Unnamed Resume"}</p>
+                  <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 gap-2">
+                    <span className="inline-block px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded font-medium">{templateNames[resume.template as keyof typeof templateNames]}</span>
+                    <span>Updated {new Date(resume.updatedAt).toLocaleDateString()}</span>
                   </div>
                 </Link>
-
-                <div className="mt-5 flex flex-wrap gap-2">
+                <div className="mt-6 flex flex-wrap gap-2">
                   <Link
                     to={`/resume/${resume._id}`}
-                    className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                    className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors"
+                    aria-label={`Edit resume: ${resume.title}`}
                   >
                     <FileText className="mr-1 h-3.5 w-3.5" />
                     Edit
                   </Link>
-                  
                   <button
                     onClick={(e) => downloadResume(resume._id, e)}
-                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors"
+                    className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors"
+                    aria-label={`Download PDF for ${resume.title}`}
                   >
                     <Download className="mr-1 h-3.5 w-3.5" />
                     Download
                   </button>
-                  
                   {resume.publicId ? (
                     <a
                       href={`/public/${resume.publicId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors"
+                      className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors"
+                      aria-label={`View public link for ${resume.title}`}
                     >
                       <ExternalLink className="mr-1 h-3.5 w-3.5" />
                       View Public
@@ -661,16 +571,17 @@ const Dashboard = () => {
                   ) : (
                     <button
                       onClick={(e) => createPublicLink(resume._id, e)}
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors"
+                      className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors"
+                      aria-label={`Create public link for ${resume.title}`}
                     >
                       <LinkIcon className="mr-1 h-3.5 w-3.5" />
                       Share
                     </button>
                   )}
-
                   <button
                     onClick={(e) => handleDeleteClick(resume._id, e)}
-                    className="inline-flex items-center px-3 py-1.5 border border-red-200 shadow-sm text-xs font-medium rounded-md text-red-600 bg-white hover:bg-red-50 dark:bg-gray-700 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900/30 transition-colors"
+                    className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-red-600 bg-white border border-red-200 hover:bg-red-50 dark:bg-gray-900 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
+                    aria-label={`Delete resume: ${resume.title}`}
                   >
                     <Trash2 className="mr-1 h-3.5 w-3.5" />
                     Delete
@@ -679,7 +590,7 @@ const Dashboard = () => {
               </div>
             </div>
           ))}
-        </div>
+        </section>
       )}
     </div>
   )

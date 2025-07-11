@@ -73,7 +73,7 @@ const PublicResume = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-secondary-50 dark:bg-secondary-950">
+      <div className="flex justify-center items-center h-screen bg-gray-50 dark:bg-gray-900">
         <LoadingSpinner />
       </div>
     )
@@ -81,44 +81,42 @@ const PublicResume = () => {
 
   if (!resume) {
     return (
-      <div className="min-h-screen pt-20 pb-12 flex flex-col bg-secondary-50 dark:bg-secondary-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-center">
-          <div className="animate-fade-in card p-8 max-w-md mx-auto">
-            <h1 className="text-2xl font-bold text-secondary-900 dark:text-white mb-3">Resume not found</h1>
-            <p className="text-secondary-600 dark:text-secondary-300">
-              This resume may have been removed or the link is invalid.
-            </p>
-          </div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 py-12">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg p-10 max-w-md w-full text-center border border-gray-100 dark:border-gray-800">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">Resume not found</h1>
+          <p className="text-gray-600 dark:text-gray-300 mb-2">
+            This resume may have been removed or the link is invalid.
+          </p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen pt-20 pb-12 flex flex-col bg-secondary-50 dark:bg-secondary-950">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 animate-slide-up">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-          <h1 className="text-2xl font-bold text-secondary-900 dark:text-white">{resume.title}</h1>
-
-          <div className="flex space-x-3">
+    <div className="min-h-screen flex flex-col items-center bg-gray-50 dark:bg-gray-900 px-4 py-12">
+      <div className="w-full max-w-4xl mx-auto">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+          <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white truncate max-w-xs sm:max-w-md">{resume.title}</h1>
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={handleShare}
-              className="btn btn-secondary flex items-center"
+              className="inline-flex items-center px-5 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors"
+              aria-label="Share public link"
             >
               <Share2 className="mr-2 h-4 w-4" />
               Share
             </button>
             <button
               onClick={handleDownload}
-              className="btn btn-primary flex items-center"
+              className="inline-flex items-center px-5 py-2 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors"
+              aria-label="Download PDF"
             >
               <Download className="mr-2 h-4 w-4" />
               Download PDF
             </button>
           </div>
         </div>
-
-        <div className="card p-6">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg p-6 border border-gray-100 dark:border-gray-800">
           <ResumePreview resume={resume} />
         </div>
       </div>

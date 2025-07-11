@@ -15,8 +15,9 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
+      <div className="flex justify-center items-center h-screen bg-gray-50 dark:bg-gray-900">
         <LoadingSpinner />
+        <span className="sr-only">Checking authentication...</span>
       </div>
     )
   }
