@@ -194,15 +194,6 @@ exports.generatePDF = async (req, res, next) => {
     // Convert Mongoose document to plain object if needed
     const resumeData = resume.toObject ? resume.toObject() : resume;
     
-    console.log('PDF Generation - Resume Data Structure:');
-    console.log(`Template: ${resumeData.template}`);
-    console.log(`Education array check: ${Array.isArray(resumeData.content.education)}`);
-    console.log(`Education length: ${resumeData.content.education ? resumeData.content.education.length : 0}`);
-    
-    if (resumeData.content.education && resumeData.content.education.length > 0) {
-      console.log('First education item:', JSON.stringify(resumeData.content.education[0], null, 2));
-    }
-    
     // Create a template context with guaranteed array structures
     const templateContext = {
       ...resumeData,
@@ -214,14 +205,7 @@ exports.generatePDF = async (req, res, next) => {
         skills: Array.isArray(resumeData.content.skills) ? resumeData.content.skills : [],
         projects: Array.isArray(resumeData.content.projects) ? resumeData.content.projects : []
       },
-      // Add count variables for debugging in templates
-      educationCount: (resumeData.content.education || []).length,
-      experienceCount: (resumeData.content.experience || []).length,
-      skillsCount: (resumeData.content.skills || []).length,
-      projectsCount: (resumeData.content.projects || []).length
     };
-    
-    console.log(`Template context education count: ${templateContext.educationCount}`);
     
     // Read the appropriate template file
     const templatePath = path.join(__dirname, '../templates', `${resumeData.template || 'modern'}.hbs`);
@@ -236,13 +220,6 @@ exports.generatePDF = async (req, res, next) => {
     // Compile the template
     const template = handlebars.compile(templateHtml);
     const html = template(templateContext);
-    
-    // For debugging: save the HTML content
-    const debugPath = path.join(__dirname, '../debug');
-    if (!fs.existsSync(debugPath)) {
-      fs.mkdirSync(debugPath);
-    }
-    fs.writeFileSync(path.join(debugPath, `resume-${resumeData._id}.html`), html);
     
     // Generate PDF from HTML
     const browser = await puppeteer.launch({
@@ -260,12 +237,6 @@ exports.generatePDF = async (req, res, next) => {
     });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
-    
-    // Take a screenshot for debugging
-    await page.screenshot({ 
-      path: path.join(debugPath, `resume-${resumeData._id}.png`),
-      fullPage: true 
-    });
     
     const pdf = await page.pdf({
       format: 'A4',
@@ -301,27 +272,6 @@ exports.generatePublicPDF = async (req, res, next) => {
     // Convert Mongoose document to plain JavaScript object
     const plainResume = JSON.parse(JSON.stringify(resume));
 
-    // Log detailed resume data to debug content issues
-    console.log('Resume data for public PDF generation:', {
-      _id: plainResume._id,
-      template: plainResume.template,
-      personalInfo: {
-        name: plainResume.content.personalInfo.name,
-        email: plainResume.content.personalInfo.email,
-      },
-      education: {
-        count: plainResume.content.education ? plainResume.content.education.length : 0,
-        firstItem: plainResume.content.education && plainResume.content.education.length > 0 ? 
-          plainResume.content.education[0].institution : 'none'
-      },
-      experience: {
-        count: plainResume.content.experience ? plainResume.content.experience.length : 0,
-      },
-      skills: {
-        count: plainResume.content.skills ? plainResume.content.skills.length : 0,
-      }
-    });
-
     // Register Handlebars helpers
     handlebars.registerHelper('formatDate', function(dateString) {
       if (!dateString) return '';
@@ -340,12 +290,6 @@ exports.generatePublicPDF = async (req, res, next) => {
       return a <= b;
     });
     
-    // Add debug helpers
-    handlebars.registerHelper('debug', function(context) {
-      console.log('Template context at render time:', context);
-      return '';
-    });
-
     // Generate PDF using puppeteer
     const browser = await puppeteer.launch({ 
       headless: true,
@@ -377,21 +321,8 @@ exports.generatePublicPDF = async (req, res, next) => {
       educationCount: plainResume.content.education ? plainResume.content.education.length : 0
     };
     
-    console.log('Public PDF template context check:', {
-      hasEducation: Array.isArray(templateContext.education),
-      educationLength: templateContext.education.length,
-    });
-    
     const html = template(templateContext);
 
-    // For debugging, save the generated HTML
-    const debugFolder = path.join(__dirname, '../../debug');
-    if (!fs.existsSync(debugFolder)) {
-      fs.mkdirSync(debugFolder);
-    }
-    const timestamp = Date.now();
-    fs.writeFileSync(path.join(debugFolder, `debug-public-html-${timestamp}.html`), html);
-    
     await page.setContent(html, { waitUntil: "networkidle0" })
     
     // Wait to ensure content renders
@@ -446,8 +377,6 @@ exports.generatePDFFromHTML = async (req, res, next) => {
       return res.status(400).json({ message: "HTML content is required" });
     }
 
-    console.log('Generating PDF from frontend HTML');
-
     // Generate PDF using puppeteer
     const browser = await puppeteer.launch({ 
       headless: true,
@@ -486,8 +415,8 @@ exports.generatePDFFromHTML = async (req, res, next) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename=${resume.title.replace(/\s+/g, "_")}.pdf`);
 
-    // Send PDF
-    res.send(pdf);
+    // Send PDF as binary
+    res.end(pdf, 'binary');
   } catch (err) {
     console.error("PDF generation from HTML error:", err);
     next(err);

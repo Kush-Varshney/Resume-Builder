@@ -134,25 +134,10 @@
     .skill-dot-empty {
       background-color: #e5e7eb;
     }
-    .debug-info {
-      font-family: monospace;
-      border: 1px solid red;
-      padding: 10px;
-      margin: 10px 0;
-      color: red;
-      background-color: #ffeeee;
-    }
   </style>
 </head>
 <body>
   <div class="container">
-    <!-- Debug section (will be removed in final PDF) -->
-    {{#if educationCount}}
-    <div class="debug-info">
-      Education items: {{educationCount}}
-    </div>
-    {{/if}}
-    
     <header>
       <h1>{{personalInfo.name}}</h1>
       <div class="contact-info">
@@ -230,11 +215,6 @@
         <div class="section">
           <div class="section-header">
             <h2>Education</h2>
-          </div>
-          
-          <!-- Debug Info (will only appear during development) -->
-          <div style="font-size: 10px; color: #999; margin-bottom: 8px;">
-            Education Count: {{educationCount}}
           </div>
           
           {{#if education}}
